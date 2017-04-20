@@ -267,7 +267,7 @@ test('do receive messages carrying already known objects', function (t) {
 })
 
 test('sender seals', function (t) {
-  t.timeoutAfter(blocktime * 10)
+  // t.timeoutAfter(blocktime * 10)
   contexts.twoFriendsSentReceivedSealed({ sealer: 'sender' }, function (err, context) {
     if (err) throw err
 
@@ -287,7 +287,7 @@ test('sender seals', function (t) {
 })
 
 test('receiver seals', function (t) {
-  t.timeoutAfter(blocktime * 10)
+  // t.timeoutAfter(blocktime * 10)
   contexts.twoFriendsSentReceivedSealed({ sealer: 'receiver' }, function (err, context) {
     if (err) throw err
 
@@ -307,13 +307,9 @@ test('receiver seals', function (t) {
 })
 
 test('`readseal` emitted once', function (t) {
-  t.timeoutAfter(5000)
+  // t.timeoutAfter(5000)
   contexts.twoFriendsSentReceivedSealed({ sealer: 'sender' }, function (err, context) {
     const dude = context.sender
-    for (var i = 0; i < dude.confirmedAfter; i++) {
-      dude.blockchain._advanceToNextBlock()
-    }
-
     context.friends.forEach(node => node.on('readseal', t.fail))
     async.each(context.friends, function iterator (node, done) {
       node.sync(function () {
@@ -463,27 +459,33 @@ test('delete watch after X confirmed', function (t) {
     }), function (err) {
       if (err) throw err
 
-      mintBlocks(defaults.confirmedAfter, function () {
+      mintBlocks(defaults.confirmedAfter, rethrow)
+      async.parallel(context.friends.map(node => {
+        return done => node.once('readseal:confirmed', () => done())
+      }), function (err) {
+        if (err) throw err
+
         async.parallel(context.friends.map(node => {
-          return done => node.sync(done)
+          return done => checkWatch(node, 0, done)
         }), function (err) {
           if (err) throw err
 
-          async.parallel(context.friends.map(node => {
-            return done => checkWatch(node, 0, done)
-          }), function (err) {
-            if (err) throw err
-
-            defaults.confirmedAfter = confirmedAfter
-            context.destroy()
-            t.end()
-          })
+          defaults.confirmedAfter = confirmedAfter
+          context.destroy()
+          t.end()
         })
       })
     })
 
     function mintBlocks (n, cb) {
-      helpers.mintBlocks({ blockchain, n }, cb)
+      blockchain.on('block', next)
+
+      function next () {
+        if (--n === 0) {
+          blockchain.removeListener('block', next)
+          cb()
+        }
+      }
     }
 
     function checkWatch (node, expected, cb) {
